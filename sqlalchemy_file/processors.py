@@ -1,7 +1,7 @@
 import mimetypes
 from abc import abstractmethod
 from tempfile import SpooledTemporaryFile
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple, Any
 
 from sqlalchemy_file.helpers import INMEMORY_FILESIZE
 
@@ -18,7 +18,7 @@ class Processor:
 
     @abstractmethod
     def process(
-        self, file: "File", upload_storage: Optional[str] = None
+        self, file: "File", upload_storage: Optional[str] = None, obj : Any = None
     ) -> None:  # pragma: no cover
         """Should be overridden in inherited class
         Parameters:
@@ -94,7 +94,7 @@ class ThumbnailGenerator(Processor):
         self.thumbnail_size = thumbnail_size
         self.thumbnail_format = thumbnail_format
 
-    def process(self, file: "File", upload_storage: Optional[str] = None) -> None:
+    def process(self, file: "File", upload_storage: Optional[str] = None, obj: Any = None) -> None:
         from PIL import Image  # type: ignore
 
         content = file.original_content
@@ -122,7 +122,8 @@ class ThumbnailGenerator(Processor):
         )
         extra.update({"content_type": content_type, "meta_data": metadata})
         stored_file = file.store_content(
-            output,
+            content=output,
+            obj=obj,
             upload_storage=upload_storage,
             extra=extra,
             headers=file.get("headers", None),

@@ -354,7 +354,7 @@ class FileFieldSessionTracker:
                 ):
                     value["headers"] = column_type.headers
                 value.save_to_storage(upload_storage, obj=obj)
-                value.apply_processors(column_type.processors, upload_storage)
+                value.apply_processors(column_type.processors, upload_storage, obj=obj)
         return changed, (
             prepared_values if column_type.multiple else prepared_values[0]
         )

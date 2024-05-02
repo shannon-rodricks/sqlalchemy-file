@@ -86,6 +86,7 @@ class File(BaseFile):
             self,
             processors: List[Processor],
             upload_storage: Optional[str] = None,
+            obj: Any = None,
     ) -> None:
         """Apply processors to current file."""
         for processor in processors:
