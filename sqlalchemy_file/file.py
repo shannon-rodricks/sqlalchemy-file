@@ -90,7 +90,7 @@ class File(BaseFile):
     ) -> None:
         """Apply processors to current file."""
         for processor in processors:
-            processor.process(self, upload_storage)
+            processor.process(self, upload_storage, obj=obj)
         self._freeze()
 
     def save_to_storage(self, upload_storage: Optional[str] = None, obj: Any = None) -> None:
