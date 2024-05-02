@@ -39,12 +39,12 @@ class File(BaseFile):
     """
 
     def __init__(
-        self,
-        content: Any = None,
-        filename: Optional[str] = None,
-        content_type: Optional[str] = None,
-        content_path: Optional[str] = None,
-        **kwargs: Dict[str, Any],
+            self,
+            content: Any = None,
+            filename: Optional[str] = None,
+            content_type: Optional[str] = None,
+            content_path: Optional[str] = None,
+            **kwargs: Dict[str, Any],
     ) -> None:
         if content is None and content_path is None:
             raise ValueError("Either content or content_path must be specified")
@@ -83,9 +83,9 @@ class File(BaseFile):
             validator.process(self, key)
 
     def apply_processors(
-        self,
-        processors: List[Processor],
-        upload_storage: Optional[str] = None,
+            self,
+            processors: List[Processor],
+            upload_storage: Optional[str] = None,
     ) -> None:
         """Apply processors to current file."""
         for processor in processors:
@@ -113,8 +113,9 @@ class File(BaseFile):
             {"filename": self.filename, "content_type": self.content_type}
         )
         stored_file = self.store_content(
-            self.original_content,
-            upload_storage,
+            content=self.original_content,
+            obj=obj,
+            upload_storage=upload_storage,
             extra=extra,
             headers=self.get("headers", None),
             content_path=self.content_path,
@@ -127,14 +128,15 @@ class File(BaseFile):
         self["saved"] = True
 
     def store_content(
-        self,
-        content: Any,
-        upload_storage: Optional[str] = None,
-        name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        extra: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        content_path: Optional[str] = None,
+            self,
+            content: Any,
+            obj: Any = None,
+            upload_storage: Optional[str] = None,
+            name: Optional[str] = None,
+            metadata: Optional[Dict[str, Any]] = None,
+            extra: Optional[Dict[str, Any]] = None,
+            headers: Optional[Dict[str, str]] = None,
+            content_path: Optional[str] = None,
     ) -> StoredFile:
         """Store content into provided `upload_storage`
         with additional `metadata`. Can be used by processors
