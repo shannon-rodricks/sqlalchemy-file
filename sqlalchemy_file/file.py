@@ -92,7 +92,7 @@ class File(BaseFile):
             processor.process(self, upload_storage)
         self._freeze()
 
-    def save_to_storage(self, upload_storage: Optional[str] = None) -> None:
+    def save_to_storage(self, upload_storage: Optional[str] = None, obj: Any = None) -> None:
         """Save current file into provided `upload_storage`."""
         extra = self.get("extra", {})
         extra.update({"content_type": self.content_type})

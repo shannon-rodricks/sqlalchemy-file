@@ -4,6 +4,7 @@ from sqlalchemy import event, inspect, orm, types
 from sqlalchemy.engine import Connection, Dialect
 from sqlalchemy.orm import ColumnProperty, Mapper, Session, SessionTransaction
 from sqlalchemy.orm.attributes import get_history
+
 from sqlalchemy_file.file import File
 from sqlalchemy_file.helpers import flatmap
 from sqlalchemy_file.mutable_list import MutableList
@@ -36,16 +37,16 @@ class FileField(types.TypeDecorator):  # type: ignore
     cache_ok = False
 
     def __init__(
-        self,
-        *args: Tuple[Any],
-        upload_storage: Optional[str] = None,
-        validators: Optional[List[Validator]] = None,
-        processors: Optional[List[Processor]] = None,
-        upload_type: Type[File] = File,
-        multiple: Optional[bool] = False,
-        extra: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        **kwargs: Dict[str, Any],
+            self,
+            *args: Tuple[Any],
+            upload_storage: Optional[str] = None,
+            validators: Optional[List[Validator]] = None,
+            processors: Optional[List[Processor]] = None,
+            upload_type: Type[File] = File,
+            multiple: Optional[bool] = False,
+            extra: Optional[Dict[str, Any]] = None,
+            headers: Optional[Dict[str, str]] = None,
+            **kwargs: Dict[str, Any],
     ) -> None:
         """Parameters:
         upload_storage: storage to use
@@ -73,17 +74,17 @@ class FileField(types.TypeDecorator):  # type: ignore
         self.processors = processors
 
     def process_bind_param(
-        self, value: Any, dialect: Dialect
+            self, value: Any, dialect: Dialect
     ) -> Union[None, Dict[str, Any], List[Dict[str, Any]]]:
         if not value:
             return None
         if not self.multiple and not isinstance(
-            value, self.upload_type
+                value, self.upload_type
         ):  # pragma: no cover
             raise ValueError(f"Expected {self.upload_type}, received: {type(value)}")
         if self.multiple and not (
-            isinstance(value, list)
-            and all(isinstance(v, self.upload_type) for v in value)
+                isinstance(value, list)
+                and all(isinstance(v, self.upload_type) for v in value)
         ):  # pragma: no cover
             raise ValueError(
                 f"Expected MutableList[{self.upload_type}], received: {type(value)}"
@@ -91,7 +92,7 @@ class FileField(types.TypeDecorator):  # type: ignore
         return [v.encode() for v in value] if self.multiple else value.encode()
 
     def process_result_value(
-        self, value: Any, dialect: Dialect
+            self, value: Any, dialect: Dialect
     ) -> Union[None, MutableList[File], File]:
         if value is None:
             return None
@@ -112,18 +113,18 @@ class ImageField(FileField):
     cache_ok = False
 
     def __init__(
-        self,
-        *args: Tuple[Any],
-        upload_storage: Optional[str] = None,
-        thumbnail_size: Optional[Tuple[int, int]] = None,
-        image_validator: Optional[ImageValidator] = None,
-        validators: Optional[List[Validator]] = None,
-        processors: Optional[List[Processor]] = None,
-        upload_type: Type[File] = File,
-        multiple: Optional[bool] = False,
-        extra: Optional[Dict[str, str]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        **kwargs: Dict[str, Any],
+            self,
+            *args: Tuple[Any],
+            upload_storage: Optional[str] = None,
+            thumbnail_size: Optional[Tuple[int, int]] = None,
+            image_validator: Optional[ImageValidator] = None,
+            validators: Optional[List[Validator]] = None,
+            processors: Optional[List[Processor]] = None,
+            upload_type: Type[File] = File,
+            multiple: Optional[bool] = False,
+            extra: Optional[Dict[str, str]] = None,
+            headers: Optional[Dict[str, str]] = None,
+            **kwargs: Dict[str, Any],
     ) -> None:
         """Parameters
         upload_storage: storage to use
@@ -201,10 +202,10 @@ class FileFieldSessionTracker:
         """Detect and listen all class with FileField Column."""
         for mapper_property in mapper.iterate_properties:
             if isinstance(mapper_property, ColumnProperty) and isinstance(
-                mapper_property.columns[0].type, FileField
+                    mapper_property.columns[0].type, FileField
             ):
                 assert (
-                    len(mapper_property.columns) == 1
+                        len(mapper_property.columns) == 1
                 ), "Multiple-column properties are not supported"
                 if mapper_property.columns[0].type.multiple:
                     MutableList.associate_with_attribute(
@@ -304,7 +305,7 @@ class FileFieldSessionTracker:
 
     @classmethod
     def prepare_file_attr(
-        cls, mapper: Mapper, obj: Any, key: str  # type: ignore[type-arg]
+            cls, mapper: Mapper, obj: Any, key: str  # type: ignore[type-arg]
     ) -> Tuple[bool, Union[File, List[File]]]:
         """Prepare file(s) for saving into the database by converting bytes or strings into
         File objects, applying validators, uploading the file(s) to the upload storage,
@@ -348,11 +349,11 @@ class FileFieldSessionTracker:
                 if column_type.extra is not None and value.get("extra", None) is None:
                     value["extra"] = column_type.extra
                 if (
-                    column_type.headers is not None
-                    and value.get("headers", None) is None
+                        column_type.headers is not None
+                        and value.get("headers", None) is None
                 ):
                     value["headers"] = column_type.headers
-                value.save_to_storage(upload_storage)
+                value.save_to_storage(upload_storage, obj=obj)
                 value.apply_processors(column_type.processors, upload_storage)
         return changed, (
             prepared_values if column_type.multiple else prepared_values[0]
