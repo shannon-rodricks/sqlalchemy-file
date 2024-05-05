@@ -1,155 +1,179 @@
-import contextlib
+import os.path
+import uuid
 import warnings
-from typing import Any, ClassVar, Dict, Iterator, Optional, Tuple
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from libcloud.storage.base import Container
-from libcloud.storage.types import ObjectDoesNotExistError
-from sqlalchemy_file.helpers import LOCAL_STORAGE_DRIVER_NAME, get_metadata_file_obj
+from sqlalchemy_file.base import BaseFile
+from sqlalchemy_file.helpers import (
+    get_content_from_file_obj,
+    get_content_size_from_fileobj,
+    get_content_type_from_fileobj,
+    get_filename_from_fileob,
+)
+from sqlalchemy_file.processors import Processor
+from sqlalchemy_file.storage import StorageManager
 from sqlalchemy_file.stored_file import StoredFile
+from sqlalchemy_file.validators import Validator
 
 
-class StorageManager:
-    """Takes care of managing the whole Storage environment for the application.
+class File(BaseFile):
+    """Takes a file as content and uploads it to the appropriate storage
+    according to the attached Column and file information into the
+    database as JSON.
 
-    Use [add_storage][sqlalchemy_file.storage.StorageManager.add_storage] method
-    to add new `libcloud.storage.base.Container`and associate a name which
-    will be use later to retrieve this container.
+    Default attributes provided for all ``File`` include:
 
-    The first container will be used as default, to simplify code when you have
-    only one container.
-
-    Use associated name as `upload_storage` for [FileField][sqlalchemy_file.types.FileField]
-    to store his files inside the corresponding container.
-
+    Attributes:
+        filename (str):  This is the name of the uploaded file
+        file_id:   This is the generated UUID for the uploaded file
+        upload_storage:   Name of the storage used to save the uploaded file
+        path:            This is a  combination of `upload_storage` and `file_id` separated by
+                        `/`. This will be use later to retrieve the file
+        content_type:   This is the content type of the uploaded file
+        uploaded_at (datetime):    This is the upload date in ISO format
+        url (str):            CDN url of the uploaded file
+        file:           Only available for saved content, internally call
+                      [StorageManager.get_file()][sqlalchemy_file.storage.StorageManager.get_file]
+                      on path and return an instance of `StoredFile`
     """
 
-    _default_storage_name: ClassVar[Optional[str]] = None
-    _storages: ClassVar[Dict[str, Container]] = {}
-
-    @classmethod
-    def set_default(cls, name: str) -> None:
-        """Replaces the current application default storage."""
-        if name not in cls._storages:
-            raise RuntimeError(f"{name} storage has not been added")
-        cls._default_storage_name = name
-
-    @classmethod
-    def get_default(cls) -> str:
-        """Gets the current application default storage."""
-        if cls._default_storage_name is None:
-            raise RuntimeError("No default storage has been added")
-        return cls._default_storage_name
-
-    @classmethod
-    def add_storage(cls, name: str, container: Container) -> None:
-        """Add new storage."""
-        assert isinstance(container, Container), "Invalid container"
-        if name in cls._storages:
-            raise RuntimeError(f"Storage {name} has already been added")
-        if cls._default_storage_name is None:
-            cls._default_storage_name = name
-        cls._storages[name] = container
-
-    @classmethod
-    def get(cls, name: Optional[str] = None) -> Container:
-        """Gets the container instance associate to the name,
-        return default if name isn't provided.
-        """
-        if name is None and cls._default_storage_name is None:
-            raise RuntimeError("No default storage have been added")
-        if name is None:
-            name = cls._default_storage_name
-        if name in cls._storages:
-            return cls._storages[name]
-        raise RuntimeError(f"{name} storage has not been added")
-
-    @classmethod
-    def save_file(
-        cls,
-        name: str,
-        content: Optional[Iterator[bytes]] = None,
-        upload_storage: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        extra: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        content_path: Optional[str] = None,
-    ) -> StoredFile:
+    def __init__(
+            self,
+            content: Any = None,
+            filename: Optional[str] = None,
+            content_type: Optional[str] = None,
+            content_path: Optional[str] = None,
+            **kwargs: Dict[str, Any],
+    ) -> None:
         if content is None and content_path is None:
             raise ValueError("Either content or content_path must be specified")
+        super().__init__(**kwargs)
+        if isinstance(content, dict):
+            object.__setattr__(self, "original_content", None)
+            object.__setattr__(self, "saved", True)
+            self.update(content)
+            self._freeze()
+        else:
+            self.content_path = content_path
+            if content_path is not None:
+                self.original_content = None
+                filename = filename or os.path.basename(content_path)
+                size = os.path.getsize(content_path)
+            else:
+                self.original_content = get_content_from_file_obj(content)
+                filename = filename or get_filename_from_fileob(content)
+                size = get_content_size_from_fileobj(self.original_content)
+            content_type = content_type or get_content_type_from_fileobj(
+                content, filename
+            )
+            self.update(
+                {
+                    "filename": filename,
+                    "content_type": content_type,
+                    "size": size,
+                    "files": [],
+                }
+            )
+            self._thaw()
+
+    def apply_validators(self, validators: List[Validator], key: str = "") -> None:
+        """Apply validators to current file."""
+        for validator in validators:
+            validator.process(self, key)
+
+    def apply_processors(
+            self,
+            processors: List[Processor],
+            upload_storage: Optional[str] = None,
+            obj: Any = None,
+    ) -> None:
+        """Apply processors to current file."""
+        for processor in processors:
+            processor.process(self, upload_storage, obj=obj)
+        self._freeze()
+
+    def save_to_storage(self, upload_storage: Optional[str] = None, obj: Any = None) -> None:
+        """Save current file into provided `upload_storage`."""
+        extra = self.get("extra", {})
+        extra.update({"content_type": self.content_type})
+
+        metadata = self.get("metadata", None)
         if metadata is not None:
             warnings.warn(
                 'metadata attribute is deprecated. Use extra={"meta_data": ...} instead',
                 DeprecationWarning,
                 stacklevel=1,
             )
-            extra = {
-                "meta_data": metadata,
-                "content_type": metadata.get(
-                    "content_type", "application/octet-stream"
-                ),
+            extra.update({"meta_data": metadata})
+
+        if extra.get("meta_data", None) is None:
+            extra["meta_data"] = {}
+
+        extra["meta_data"].update(
+            {
+                "filename": self.filename,
+                "content_type": self.content_type
             }
-        """Save file into provided `upload_storage`"""
-        container = cls.get(upload_storage)
-        if (
-            container.driver.name == LOCAL_STORAGE_DRIVER_NAME
-            and extra is not None
-            and extra.get("meta_data", None) is not None
-        ):
-            """
-            Libcloud local storage driver doesn't support metadata, so the metadata
-            is saved in the same container with the combination of the original name
-            and `.metadata.json` as name
-            """
-            container.upload_object_via_stream(
-                iterator=get_metadata_file_obj(extra["meta_data"]),
-                object_name=f"{name}.metadata.json",
-            )
-        if content_path is not None:
-            return StoredFile(
-                container.upload_object(
-                    file_path=content_path,
-                    object_name=name,
-                    extra=extra,
-                    headers=headers,
-                )
-            )
-        assert content is not None
-        return StoredFile(
-            container.upload_object_via_stream(
-                iterator=content, object_name=name, extra=extra, headers=headers
-            )
         )
+        stored_file = self.store_content(
+            content=self.original_content,
+            obj=obj,
+            upload_storage=upload_storage,
+            extra=extra,
+            headers=self.get("headers", None),
+            content_path=self.content_path,
+        )
+        extra["meta_data"].update(
+            {
+                "filename": stored_file.name,
+            }
+        )
+        self["filename"] = stored_file.name
+        self["file_id"] = stored_file.name.replace("/","_")
+        self["upload_storage"] = upload_storage
+        self["uploaded_at"] = datetime.utcnow().isoformat()
+        self["path"] = f"{upload_storage}/{stored_file.name}"
+        self["url"] = stored_file.get_cdn_url()
+        self["saved"] = True
 
-    @classmethod
-    def get_file(cls, path: str) -> StoredFile:
-        """Retrieve the file with `provided` path,
-        path is expected to be `storage_name/file_id`.
+    def store_content(
+            self,
+            content: Any,
+            obj: Any = None,
+            upload_storage: Optional[str] = None,
+            name: Optional[str] = None,
+            metadata: Optional[Dict[str, Any]] = None,
+            extra: Optional[Dict[str, Any]] = None,
+            headers: Optional[Dict[str, str]] = None,
+            content_path: Optional[str] = None,
+    ) -> StoredFile:
+        """Store content into provided `upload_storage`
+        with additional `metadata`. Can be used by processors
+        to store additional files.
         """
-        upload_storage, file_id = cls._get_storage_and_file_id(path)
-        return StoredFile(StorageManager.get(upload_storage).get_object(file_id))
+        name = name or str(uuid.uuid4())
+        stored_file = StorageManager.save_file(
+            name=name,
+            content=content,
+            upload_storage=upload_storage,
+            metadata=metadata,
+            extra=extra,
+            headers=headers,
+            content_path=content_path,
+        )
+        self["files"].append(f"{upload_storage}/{name}")
+        return stored_file
+
+    def encode(self) -> Dict[str, Any]:
+        return {k: v for k, v in self.items() if k not in ["original_content"]}
 
     @classmethod
-    def delete_file(cls, path: str) -> bool:
-        """Delete the file with `provided` path.
+    def decode(cls, data: Any) -> "File":
+        return cls(data)
 
-        The path is expected to be `storage_name/file_id`.
-        """
-        upload_storage, file_id = cls._get_storage_and_file_id(path)
-        obj = StorageManager.get(upload_storage).get_object(file_id)
-        if obj.driver.name == LOCAL_STORAGE_DRIVER_NAME:
-            """Try deleting associated metadata file"""
-            with contextlib.suppress(ObjectDoesNotExistError):
-                obj.container.get_object(f"{obj.name}.metadata.json").delete()
-
-        return obj.delete()
-
-    @classmethod
-    def _clear(cls) -> None:
-        """This is only for testing pourposes, resets the StorageManager."""
-        cls._default_storage_name = None
-        cls._storages = {}
-
-    @classmethod
-    def _get_storage_and_file_id(cls, path: str) -> Tuple[str, str]:
-        path_parts = path.split("/")
-        return "/".join(path_parts[:-1]), path_parts[-1]
+    @property
+    def file(self) -> "StoredFile":
+        if self.get("saved", False):
+            return StorageManager.get_file(self["path"])
+        raise RuntimeError("Only available for saved file")

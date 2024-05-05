@@ -111,7 +111,10 @@ class File(BaseFile):
             extra["meta_data"] = {}
 
         extra["meta_data"].update(
-            {"filename": self.filename, "content_type": self.content_type}
+            {
+                "filename": self.filename,
+                "content_type": self.content_type
+            }
         )
         stored_file = self.store_content(
             content=self.original_content,
@@ -121,7 +124,13 @@ class File(BaseFile):
             headers=self.get("headers", None),
             content_path=self.content_path,
         )
-        self["file_id"] = stored_file.name
+        extra["meta_data"].update(
+            {
+                "filename": stored_file.name,
+            }
+        )
+        self["filename"] = stored_file.name
+        self["file_id"] = stored_file.name.replace("/","_")
         self["upload_storage"] = upload_storage
         self["uploaded_at"] = datetime.utcnow().isoformat()
         self["path"] = f"{upload_storage}/{stored_file.name}"
